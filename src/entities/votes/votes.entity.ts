@@ -23,7 +23,7 @@ export class Vote {
   @Column({ type: 'enum', enum: VoteType })
   type: VoteType;
 
-  @Column({ type: 'tinyint' })
+  @Column({ type: 'smallint' })
   vote_value: number;
 
   @ManyToOne(() => Question, (question) => question.id, { nullable: true })

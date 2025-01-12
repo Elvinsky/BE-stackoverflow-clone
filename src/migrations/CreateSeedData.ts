@@ -1,19 +1,29 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateTablesAndSeedData1673542843940
-  implements MigrationInterface
-{
-  name = 'CreateTablesAndSeedData1673542843940';
+export class CreateSeedData implements MigrationInterface {
+  name = 'CreateSeedData';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS "votes" CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "question_tags" CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "tags" CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "answers" CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "questions" CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "users" CASCADE`);
+    await queryRunner.query(`DROP TYPE IF EXISTS vote_type`);
+    await queryRunner.query(`DROP TYPE IF EXISTS user_role`);
+    await queryRunner.query(`DROP TYPE IF EXISTS users_role_enum`);
+
+    await queryRunner.query(`CREATE TYPE user_role AS ENUM ('admin', 'user')`);
+
     await queryRunner.query(`
       CREATE TABLE "users" (
         "id" SERIAL PRIMARY KEY,
         "username" VARCHAR(50) NOT NULL UNIQUE,
         "email" VARCHAR(100) NOT NULL UNIQUE,
-        "role" ENUM('admin', 'user') NOT NULL DEFAULT 'user',
+        "role" user_role NOT NULL DEFAULT 'user',
         "created_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -25,7 +35,7 @@ export class CreateTablesAndSeedData1673542843940
         "description" TEXT NOT NULL,
         "rating" INT DEFAULT 0,
         "created_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY ("author_id") REFERENCES "users"("id") ON DELETE CASCADE
       )
     `);
@@ -38,7 +48,7 @@ export class CreateTablesAndSeedData1673542843940
         "text" TEXT NOT NULL,
         "rating" INT DEFAULT 0,
         "created_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        "updated_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY ("question_id") REFERENCES "questions"("id") ON DELETE CASCADE,
         FOREIGN KEY ("author_id") REFERENCES "users"("id") ON DELETE CASCADE
       )
@@ -61,14 +71,22 @@ export class CreateTablesAndSeedData1673542843940
       )
     `);
 
+    await queryRunner.query(
+      `CREATE TYPE vote_type AS ENUM ('question', 'answer')`
+    );
+
     await queryRunner.query(`
       CREATE TABLE "votes" (
         "id" SERIAL PRIMARY KEY,
         "user_id" INT NOT NULL,
-        "type" ENUM('question', 'answer') NOT NULL,
-        "vote_value" TINYINT NOT NULL,
+        "type" vote_type NOT NULL,
+        "vote_value" SMALLINT NOT NULL,
         "created_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "question_id" INT,
+        "answer_id" INT,
         FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE,
+        FOREIGN KEY ("question_id") REFERENCES "questions"("id") ON DELETE CASCADE,
+        FOREIGN KEY ("answer_id") REFERENCES "answers"("id") ON DELETE CASCADE,
         CHECK ("vote_value" IN (1, -1))
       )
     `);
@@ -107,12 +125,14 @@ export class CreateTablesAndSeedData1673542843940
     `);
     const [firstQuestion, secondQuestion] = questionResult;
 
-    await queryRunner.query(`
+    const answerResult = await queryRunner.query(`
       INSERT INTO "answers" ("question_id", "author_id", "text") 
       VALUES 
         (${firstQuestion.id}, ${adminId}, 'NestJS setup is simple, just follow the official documentation'),
         (${secondQuestion.id}, ${adminId}, 'You need to install TypeORM and configure your database connection')
+      RETURNING "id"
     `);
+    const [firstAnswer] = answerResult;
 
     await queryRunner.query(`
       INSERT INTO "question_tags" ("question_id", "tag_id") 
@@ -127,8 +147,13 @@ export class CreateTablesAndSeedData1673542843940
       INSERT INTO "votes" ("user_id", "type", "vote_value", "question_id") 
       VALUES 
         (${adminId}, 'question', 1, ${firstQuestion.id}),
-        (${adminId}, 'question', -1, ${secondQuestion.id}),
-        (${adminId}, 'answer', 1, ${firstQuestion.id})
+        (${adminId}, 'question', -1, ${secondQuestion.id})
+    `);
+
+    await queryRunner.query(`
+      INSERT INTO "votes" ("user_id", "type", "vote_value", "answer_id") 
+      VALUES 
+        (${adminId}, 'answer', 1, ${firstAnswer.id})
     `);
   }
 
@@ -139,5 +164,7 @@ export class CreateTablesAndSeedData1673542843940
     await queryRunner.query(`DROP TABLE IF EXISTS "answers"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "questions"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "users"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS vote_type`);
+    await queryRunner.query(`DROP TYPE IF EXISTS user_role`);
   }
 }
